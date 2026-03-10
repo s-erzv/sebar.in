@@ -23,30 +23,30 @@ export default function SignupPage() {
   };
 
   const handleSignup = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
+  e.preventDefault();
+  setLoading(true);
+  setError(null);
 
-    const { data, error: authError } = await supabase.auth.signUp({
-      email: formData.email,
-      password: formData.password,
-      options: {
-        data: {
-          full_name: formData.fullName, 
-        },
+  const { data, error: authError } = await supabase.auth.signUp({
+    email: formData.email,
+    password: formData.password,
+    options: {
+      data: {
+        full_name: formData.fullName, 
+        role: "user", 
       },
-    });
+    },
+  });
 
-    if (authError) {
-      setError(authError.message);
-      setLoading(false);
-      return;
-    }
+  if (authError) {
+    setError(authError.message);
+    setLoading(false);
+    return;
+  }
 
-    // Sukses -> Lempar ke dashboard
-    router.push("/dashboard/user");
-    router.refresh(); // Paksa re-evaluasi middleware
-  };
+  router.push("/dashboard/user");
+  router.refresh(); 
+};
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">

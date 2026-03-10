@@ -40,7 +40,7 @@ export async function middleware(request) {
     }
   }
 
-  if (url.pathname.startsWith("/auth")) {
+  if (url.pathname === "/login" || url.pathname === "/signup") {
     if (user) {
       url.pathname = "/dashboard/user";
       return NextResponse.redirect(url);
@@ -51,8 +51,5 @@ export async function middleware(request) {
 }
 
 export const config = {
-  matcher: [
-    "/dashboard/:path*", 
-    "/auth/:path*"
-  ],
-};
+    matcher: ["/dashboard/:path*", "/login", "/signup"],
+  };

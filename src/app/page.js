@@ -1,29 +1,24 @@
-// src/app/page.jsx
 import Link from "next/link";
-import { ArrowRight, LogIn } from "lucide-react"; // Pastikan lucide-react sudah diinstall sebelumnya
+import { ArrowRight, LogIn } from "lucide-react"; 
 
 export default function Home() {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50 text-gray-900 selection:bg-blue-200">
       <main className="flex w-full max-w-4xl flex-col items-center justify-center px-6 text-center sm:px-12">
         
-        {/* Badge Vibe */}
         <div className="mb-6 inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-4 py-1.5 text-sm font-semibold text-blue-700 shadow-sm">
           #PASTIMUDAHDISEBAR
         </div>
 
-        {/* Headline */}
         <h1 className="mb-6 text-4xl font-extrabold tracking-tight text-gray-900 sm:text-6xl sm:leading-tight">
           Buat Undangan Digital <br className="hidden sm:block" />
           <span className="text-blue-600">Tanpa Ribet</span>
         </h1>
 
-        {/* Sub-headline */}
         <p className="mb-10 max-w-2xl text-lg text-gray-600 sm:text-xl">
           Platform pembuatan undangan digital premium untuk pernikahan, ulang tahun, dan event lainnya. Pilih template, isi data, bayar, dan langsung sebar!
         </p>
 
-        {/* CTA Buttons */}
         <div className="flex w-full flex-col gap-4 sm:w-auto sm:flex-row sm:justify-center">
           <Link
             href="/signup"

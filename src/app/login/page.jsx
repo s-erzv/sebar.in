@@ -26,7 +26,7 @@ export default function LoginPage() {
     setLoading(true);
     setError(null);
 
-    const { error: authError } = await supabase.auth.signInWithPassword({
+    const { data, error: authError } = await supabase.auth.signInWithPassword({
       email: formData.email,
       password: formData.password,
     });
@@ -37,7 +37,14 @@ export default function LoginPage() {
       return;
     }
 
-    router.push("/dashboard/user");
+    const userRole = data.user?.user_metadata?.role;
+
+    if (userRole === "admin") {
+      router.push("/dashboard/admin");
+    } else {
+      router.push("/dashboard/user");
+    }
+    
     router.refresh();
   };
 
@@ -63,14 +70,14 @@ export default function LoginPage() {
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <Mail className="h-5 w-5 text-gray-400" />
               </div>
-              <input
-                type="email"
-                name="email"
-                required
-                value={formData.email}
-                onChange={handleChange}
-                className="block w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm transition-colors"
-                placeholder="budi@example.com"
+              <input 
+                type="email" 
+                name="email" 
+                required 
+                value={formData.email} 
+                onChange={handleChange} 
+                className="block w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm transition-colors outline-none" 
+                placeholder="budi@example.com" 
               />
             </div>
           </div>
@@ -81,21 +88,21 @@ export default function LoginPage() {
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <Lock className="h-5 w-5 text-gray-400" />
               </div>
-              <input
-                type="password"
-                name="password"
-                required
-                value={formData.password}
-                onChange={handleChange}
-                className="block w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm transition-colors"
-                placeholder="••••••••"
+              <input 
+                type="password" 
+                name="password" 
+                required 
+                value={formData.password} 
+                onChange={handleChange} 
+                className="block w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm transition-colors outline-none" 
+                placeholder="••••••••" 
               />
             </div>
           </div>
 
-          <button
-            type="submit"
-            disabled={loading}
+          <button 
+            type="submit" 
+            disabled={loading} 
             className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-70 disabled:cursor-not-allowed transition-all"
           >
             {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Masuk"}

@@ -1,4 +1,3 @@
-// src/components/providers/AuthProvider.jsx
 "use client";
 
 import { createContext, useContext, useEffect, useState } from "react";
@@ -7,55 +6,72 @@ import { useRouter } from "next/navigation";
 
 const AuthContext = createContext({
   user: null,
-  session: null,
+  profile: null,
   isLoading: true,
 });
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
-  const [session, setSession] = useState(null);
+  const [profile, setProfile] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
   const supabase = createClient();
 
   useEffect(() => {
-    // 1. Ambil session awal saat pertama render
-    const getInitialSession = async () => {
-      const { data: { session }, error } = await supabase.auth.getSession();
-      if (error) console.error("Auth init error:", error.message);
+    const initializeAuth = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
       
-      setSession(session);
-      setUser(session?.user ?? null);
+      const currentUser = session?.user ?? null;
+      setUser(currentUser);
+
+      if (currentUser?.user_metadata?.role) {
+        setProfile({ 
+          role: currentUser.user_metadata.role,
+          full_name: currentUser.user_metadata.full_name 
+        });
+        
+        setIsLoading(false); 
+      }
+
+      if (currentUser) {
+        const { data: dbProfile } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", currentUser.id)
+          .single();
+        
+        if (dbProfile) setProfile(dbProfile);
+      }
+
       setIsLoading(false);
     };
 
-    getInitialSession();
+    initializeAuth();
 
-    // 2. Listen perubahan state (Login, Logout, Token refresh)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        setIsLoading(false);
-        router.refresh(); // Memaksa Server Component untuk re-render dengan auth baru
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      const newUser = session?.user ?? null;
+      setUser(newUser);
+      
+      if (!newUser) {
+        setProfile(null);
+      } else if (newUser.user_metadata?.role) {
+        setProfile({ 
+          role: newUser.user_metadata.role,
+          full_name: newUser.user_metadata.full_name 
+        });
       }
-    );
+      
+      setIsLoading(false);
+    });
 
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, [supabase, router]);
+    return () => subscription.unsubscribe();
+  }, [supabase]);
 
   return (
-    <AuthContext.Provider value={{ user, session, isLoading }}>
+    <AuthContext.Provider value={{ user, profile, isLoading }}>
       {children}
     </AuthContext.Provider>
   );
 };
 
-/**
- * Custom hook untuk mengambil data user di Client Components.
- */
-export const useAuth = () => {
-  return useContext(AuthContext);
-};
+export const useAuth = () => useContext(AuthContext);

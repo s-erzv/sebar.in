@@ -8,7 +8,6 @@ import { useAuth } from "@/components/providers/AuthProvider";
 import { Upload, CheckCircle2, AlertCircle, Loader2, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 
-// Konfigurasi Harga berdasarkan ID Plan
 const PLAN_DETAILS = {
   standard: { name: "Standard", price: 150000 },
   premium: { name: "Premium", price: 350000 },
@@ -29,7 +28,6 @@ function CheckoutForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // Validasi file: Hanya gambar dan maksimal 2MB
   const handleFileChange = (e) => {
     const selectedFile = e.target.files[0];
     if (!selectedFile) return;
@@ -60,24 +58,20 @@ function CheckoutForm() {
     setError(null);
 
     try {
-      // 1. Generate nama file unik biar tidak bentrok
       const fileExt = file.name.split('.').pop();
       const fileName = `${user.id}-${Date.now()}.${fileExt}`;
       const filePath = `transfers/${fileName}`;
 
-      // 2. Upload ke Supabase Storage
       const { error: uploadError } = await supabase.storage
         .from('payment_proofs')
         .upload(filePath, file);
 
       if (uploadError) throw uploadError;
 
-      // 3. Dapatkan Public URL dari file yang diupload
       const { data: { publicUrl } } = supabase.storage
         .from('payment_proofs')
         .getPublicUrl(filePath);
 
-      // 4. Insert data pesanan ke Database
       const { error: insertError } = await supabase
         .from('orders')
         .insert({
@@ -85,12 +79,11 @@ function CheckoutForm() {
           plan_type: planId,
           amount: selectedPlan.price,
           payment_proof_url: publicUrl,
-          status: 'pending' // Menunggu verifikasi admin
+          status: 'pending'
         });
 
       if (insertError) throw insertError;
 
-      // 5. Sukses -> Lempar ke halaman Riwayat Pesanan
       router.push("/dashboard/user/orders?success=true");
       
     } catch (err) {
@@ -121,7 +114,6 @@ function CheckoutForm() {
         </div>
 
         <div className="p-6 md:p-8 grid grid-cols-1 md:grid-cols-2 gap-8">
-          {/* Instruksi Transfer */}
           <div className="space-y-6">
             <div>
               <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
@@ -147,7 +139,6 @@ function CheckoutForm() {
             </div>
           </div>
 
-          {/* Form Upload */}
           <form onSubmit={handleSubmit} className="space-y-4 border-t md:border-t-0 md:border-l border-gray-200 md:pl-8">
             <h3 className="text-lg font-semibold text-gray-900">Upload Bukti Bayar</h3>
             
@@ -190,4 +181,10 @@ function CheckoutForm() {
   );
 }
 
-// WAJIB: Membungkus form dengan
+export default function CheckoutPage() {
+  return (
+    <Suspense fallback={<div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /></div>}>
+      <CheckoutForm />
+    </Suspense>
+  );
+}
