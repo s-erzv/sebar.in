@@ -23,7 +23,14 @@ function OrdersContent() {
     const fetchOrders = async () => {
       const { data, error } = await supabase
         .from("orders")
-        .select("*")
+        .select(`
+          *,
+          invitations (
+            id,
+            slug,
+            is_published
+          )
+        `)
         .eq("user_id", user.id)
         .order("created_at", { ascending: false });
 
@@ -119,12 +126,27 @@ function OrdersContent() {
                 </div>
 
                 {order.status === "verified" ? (
-                  <Link
-                    href={`/dashboard/user/builder?order=${order.id}`}
-                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-blue-700 transition-colors focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-                  >
-                    Mulai Buat Undangan <ArrowRight className="w-4 h-4" />
-                  </Link>
+                  <div className="flex flex-col gap-2">
+                    <Link
+                      href={`/dashboard/user/builder?order=${order.id}`}
+                      className={`inline-flex items-center justify-center gap-2 rounded-lg px-5 py-2.5 text-sm font-bold transition-all
+                        ${order.invitations?.length > 0 
+                          ? "bg-amber-500 text-white hover:bg-amber-600 shadow-md shadow-amber-100" 
+                          : "bg-blue-600 text-white hover:bg-blue-700 shadow-md shadow-blue-100"}`}
+                    >
+                      {order.invitations?.length > 0 ? "Edit Undangan" : "Mulai Buat Undangan"}
+                      <ArrowRight className="w-4 h-4" />
+                    </Link>
+                    {order.invitations?.[0]?.is_published && (
+                      <Link
+                        href={`/${order.invitations[0].slug}`}
+                        target="_blank"
+                        className="text-[10px] text-center font-bold text-gray-400 uppercase tracking-widest hover:text-blue-600 transition-colors"
+                      >
+                        Lihat Live Undangan
+                      </Link>
+                    )}
+                  </div>
                 ) : (
                   <button 
                     disabled 

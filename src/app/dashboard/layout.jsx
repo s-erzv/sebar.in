@@ -41,6 +41,7 @@ export default function DashboardLayout({ children }) {
   ];
 
   const navItems = profile?.role === "admin" ? adminNavItems : userNavItems;
+  const isPreviewFrame = pathname?.includes("preview-frame");
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -54,6 +55,10 @@ export default function DashboardLayout({ children }) {
         <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
       </div>
     );
+  }
+
+  if (isPreviewFrame) {
+    return <main className="h-screen w-full overflow-hidden">{children}</main>;
   }
 
   return (

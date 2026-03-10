@@ -12,7 +12,6 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
-// ─── Kategori undangan ────────────────────────────────────────
 const CATEGORIES = [
   { value: "wedding",    label: "Pernikahan",  emoji: "💍" },
   { value: "birthday",   label: "Ulang Tahun", emoji: "🎂" },
@@ -21,8 +20,6 @@ const CATEGORIES = [
   { value: "general",    label: "Umum",        emoji: "✉️" },
 ];
 
-// ─── Helper: ambil isi blok { } dengan brace-counting ─────────
-// Lebih reliable dari lazy regex [\s\S]*? yang berhenti di } pertama
 function extractBraceBlock(text, startIndex) {
   let depth = 0;
   let i = startIndex;
@@ -37,10 +34,8 @@ function extractBraceBlock(text, startIndex) {
   return null;
 }
 
-// ─── Parse TEMPLATE_SCHEMA dari teks JSX (client-side preview) ─
 function parseSchemaFromJSX(jsxText) {
   try {
-    // 1. Cari posisi awal blok TEMPLATE_SCHEMA = {
     const schemaHeaderMatch = jsxText.match(/export\s+const\s+TEMPLATE_SCHEMA\s*=\s*\{/);
     if (!schemaHeaderMatch) return null;
 
@@ -48,7 +43,6 @@ function parseSchemaFromJSX(jsxText) {
     const schemaBlock = extractBraceBlock(jsxText, schemaStart);
     if (!schemaBlock) return null;
 
-    // 2. Di dalam schemaBlock, cari blok meta: { ... }
     const metaHeaderMatch = schemaBlock.match(/\bmeta\s*:\s*\{/);
     if (!metaHeaderMatch) return null;
 
@@ -56,7 +50,6 @@ function parseSchemaFromJSX(jsxText) {
     const metaBlock = extractBraceBlock(schemaBlock, metaStart);
     if (!metaBlock) return null;
 
-    // 3. Extract nilai dari dalam metaBlock
     const extract = (key) => {
       const m = metaBlock.match(new RegExp(`\\b${key}\\s*:\\s*["\'\`]([^"\'\`]+)["\'\`]`));
       return m ? m[1] : null;
@@ -80,7 +73,6 @@ function parseSchemaFromJSX(jsxText) {
         ?.map((s) => s.replace(/["\'\`]/g, "")) ?? [];
     };
 
-    // 4. Hitung sections & fields dari seluruh schemaBlock
     const fieldCount   = (schemaBlock.match(/\bkey\s*:/g) || []).length;
     const sectionCount = (schemaBlock.match(/\bsections\s*:/g) || []).length;
 
@@ -99,7 +91,6 @@ function parseSchemaFromJSX(jsxText) {
   }
 }
 
-// ─── Status badge ──────────────────────────────────────────────
 function ParseBadge({ status }) {
   const map = {
     idle:     { color: "bg-gray-100 text-gray-500",   icon: null,            text: "Belum diupload" },
@@ -116,31 +107,25 @@ function ParseBadge({ status }) {
   );
 }
 
-// ─── Main Page ─────────────────────────────────────────────────
 export default function NewTemplatePage() {
   const { profile, isLoading: authLoading } = useAuth();
   const supabase = createClient();
   const router = useRouter();
   const fileInputRef = useRef(null);
 
-  // Form state
   const [slug, setSlug]         = useState("");
   const [isPremium, setIsPremium] = useState(false);
   const [category, setCategory] = useState("general");
   const [changelog, setChangelog] = useState("");
 
-  // File state
-  const [jsxFile, setJsxFile]   = useState(null);       // File object
-  const [jsxText, setJsxText]   = useState("");          // raw teks JSX
-  const [parseStatus, setParseStatus] = useState("idle"); // idle|reading|success|warning|error
+  const [jsxFile, setJsxFile]   = useState(null);      
+  const [jsxText, setJsxText]   = useState("");         
+  const [parseStatus, setParseStatus] = useState("idle");
   const [parsedSchema, setParsedSchema] = useState(null);
   const [parseErrors, setParseErrors]   = useState([]);
 
-  // Submit state
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
-
-  // ── Drag & Drop ──
   const [isDragging, setIsDragging] = useState(false);
 
   const handleDrop = useCallback((e) => {
@@ -155,7 +140,6 @@ export default function NewTemplatePage() {
     if (file) processFile(file);
   };
 
-  // ── Process file ──
   const processFile = async (file) => {
     if (!file.name.endsWith(".jsx") && !file.name.endsWith(".tsx")) {
       setParseStatus("error");
@@ -176,7 +160,6 @@ export default function NewTemplatePage() {
     const text = await file.text();
     setJsxText(text);
 
-    // Cek wajib exports
     const errors = [];
     if (!text.includes("export const TEMPLATE_SCHEMA")) {
       errors.push("Tidak ada `export const TEMPLATE_SCHEMA` — wajib ada di file");
@@ -185,17 +168,13 @@ export default function NewTemplatePage() {
       errors.push("Tidak ada `export default` — wajib ada React component sebagai default export");
     }
 
-    // Cek import terlarang — hanya cek actual import/require statements,
-    // BUKAN teks bebas (komentar, string, nama variable) supaya tidak false positive
     const forbiddenImportPatterns = [
       { pattern: /^\s*import\s+.*from\s+['"]axios['"]/m,        label: "axios" },
       { pattern: /^\s*import\s+.*from\s+['"]node-fetch['"]/m,   label: "node-fetch" },
       { pattern: /^\s*import\s+.*from\s+['"]fs['"]/m,           label: "fs" },
       { pattern: /^\s*import\s+.*from\s+['"]child_process['"]/m, label: "child_process" },
       { pattern: /^\s*import\s+.*from\s+['"]path['"]/m,         label: "path" },
-      // require() — hanya yang beneran call, bukan kata "require" di komentar
-      { pattern: /(?<![/]{2}.*)\brequire\s*\(\s*['"]/m,         label: "require()" },
-      // eval() — sama
+      { pattern: /(?<![/]{2}.*)\brequire\s*\(\s*['"]/m,         label: "require()" },      // eval() — sama
       { pattern: /(?<![/]{2}.*)\beval\s*\(/m,                   label: "eval()" },
     ];
     forbiddenImportPatterns.forEach(({ pattern, label }) => {
@@ -208,7 +187,6 @@ export default function NewTemplatePage() {
       return;
     }
 
-    // Parse schema preview
     const schema = parseSchemaFromJSX(text);
 
     if (!schema || !schema.name) {
@@ -218,7 +196,6 @@ export default function NewTemplatePage() {
       return;
     }
 
-    // Auto-fill form dari schema
     if (schema.category) setCategory(schema.category);
     if (schema.name) {
       const autoSlug = schema.name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
@@ -230,9 +207,7 @@ export default function NewTemplatePage() {
     setParseStatus("success");
   };
 
-  // ── Submit ──
   const handleSubmit = async () => {
-    // 1. Pre-flight Checks
     if (!jsxFile || parseStatus === "error") return;
     if (!slug.trim()) { 
         setSubmitError("Slug wajib diisi"); 
@@ -242,16 +217,12 @@ export default function NewTemplatePage() {
     setSubmitting(true);
     setSubmitError("");
 
-    // Strategi: Generate ID di awal untuk konsistensi Storage & DB
     const templateId = crypto.randomUUID();
     const finalPath = `${templateId}/v1/component.jsx`;
     
-    // Flag untuk tracking progress (untuk cleanup)
     let fileUploaded = false;
 
     try {
-        // ── STEP 1: Direct Upload ke Storage ──
-        // Kita langsung upload ke folder final menggunakan UUID yang di-generate
         const { error: uploadErr } = await supabase.storage
         .from("templates-source")
         .upload(finalPath, jsxFile, { 
@@ -265,8 +236,6 @@ export default function NewTemplatePage() {
         
         fileUploaded = true;
 
-        // ── STEP 2: Database Transaction (Template Row) ──
-        // Menggunakan templateId yang sama dengan folder di storage
         const { error: insertErr } = await supabase
         .from("templates")
         .insert({
@@ -278,7 +247,7 @@ export default function NewTemplatePage() {
             is_active:       false,
             parse_status:    "pending",
             jsx_file_path:   finalPath,
-            content_schema:  {}, // Akan diisi oleh server-side parser
+            content_schema:  {},
             guest_schema:    {},
             default_content: {},
             tags:            parsedSchema?.tags ?? [],
@@ -290,8 +259,7 @@ export default function NewTemplatePage() {
         throw new Error(`Database Error: ${insertErr.message}`);
         }
 
-        // ── STEP 3: Versioning ──
-        // Mencatat sejarah versi template
+
         const { error: versionErr } = await supabase
         .from("template_versions")
         .insert({
@@ -302,13 +270,10 @@ export default function NewTemplatePage() {
         });
 
         if (versionErr) {
-        // Kita tidak throw error di sini agar proses utama (compile) tetap jalan, 
-        // tapi secara ideal ini harus tercatat.
         console.warn("Version log failed, but template was created:", versionErr.message);
         }
 
-        // ── STEP 4: Trigger Server-Side Compiler ──
-        // Memanggil API internal untuk compile JSX -> JS menggunakan esbuild
+        
         const parseResponse = await fetch("/api/admin/templates/parse", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -320,7 +285,6 @@ export default function NewTemplatePage() {
         throw new Error(`Compiler Error: ${parseData.error || "Gagal memicu parser"}`);
         }
 
-        // Success: Redirect ke dashboard dengan query param untuk notifikasi
         router.push(`/dashboard/admin?tab=templates&new=${templateId}`);
         router.refresh();
 
@@ -328,8 +292,6 @@ export default function NewTemplatePage() {
         console.error("Upload process failed:", err);
         setSubmitError(err.message);
 
-        // ── CLEANUP LOGIC ──
-        // Jika file sudah terupload tapi insert DB gagal, hapus filenya agar tidak jadi "zombie"
         if (fileUploaded) {
         await supabase.storage.from("templates-source").remove([finalPath]);
         }
@@ -338,7 +300,6 @@ export default function NewTemplatePage() {
     }
     };
 
-  // ── Guards ──
   if (authLoading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -348,11 +309,9 @@ export default function NewTemplatePage() {
   }
   if (profile?.role !== "admin") return <AccessDenied />;
 
-  // ─────────────────────────────────────────────────────────────
   return (
     <div className="max-w-5xl mx-auto py-8 px-4 space-y-8 font-sans">
 
-      {/* ── Header ── */}
       <div className="flex items-center justify-between">
         <Link
           href="/dashboard/admin"
@@ -388,10 +347,8 @@ export default function NewTemplatePage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
 
-        {/* ── LEFT: Upload + Config ── */}
         <div className="lg:col-span-3 space-y-6">
 
-          {/* Drop Zone */}
           <div
             onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
             onDragLeave={() => setIsDragging(false)}
@@ -439,7 +396,6 @@ export default function NewTemplatePage() {
             )}
           </div>
 
-          {/* Parse errors */}
           {parseErrors.length > 0 && (
             <div className="rounded-xl border border-red-200 bg-red-50 p-4 space-y-2">
               <div className="flex items-center gap-2 text-red-700 font-semibold text-sm">
@@ -455,17 +411,15 @@ export default function NewTemplatePage() {
             </div>
           )}
 
-          {/* Config fields */}
           <div className="bg-white border border-gray-200 rounded-2xl divide-y divide-gray-100 shadow-sm">
 
-            {/* Slug */}
             <div className="p-5 space-y-1.5">
               <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-1.5">
                 <Tag className="w-3.5 h-3.5" /> Slug URL
               </label>
               <div className="flex items-center gap-0 border border-gray-200 rounded-lg overflow-hidden focus-within:ring-2 focus-within:ring-gray-900 focus-within:border-transparent">
                 <span className="px-3 py-2.5 text-xs text-gray-400 bg-gray-50 border-r border-gray-200 font-mono whitespace-nowrap">
-                  /t/
+                  /templates/
                 </span>
                 <input
                   type="text"
@@ -480,7 +434,6 @@ export default function NewTemplatePage() {
               </p>
             </div>
 
-            {/* Kategori */}
             <div className="p-5 space-y-1.5">
               <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-1.5">
                 <Layers className="w-3.5 h-3.5" /> Kategori
@@ -503,7 +456,6 @@ export default function NewTemplatePage() {
               <p className="text-xs text-gray-400">Auto-diisi dari <code className="font-mono">meta.category</code> jika ada</p>
             </div>
 
-            {/* Premium + Changelog */}
             <div className="p-5 space-y-4">
               <label className="flex items-center justify-between cursor-pointer group">
                 <span className="flex items-center gap-2 text-sm font-medium text-gray-700">
@@ -533,7 +485,6 @@ export default function NewTemplatePage() {
             </div>
           </div>
 
-          {/* Submit error */}
           {submitError && (
             <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
               <XCircle className="w-4 h-4 shrink-0" /> {submitError}
@@ -541,7 +492,6 @@ export default function NewTemplatePage() {
           )}
         </div>
 
-        {/* ── RIGHT: Schema Preview ── */}
         <div className="lg:col-span-2 space-y-4">
           <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wide flex items-center gap-2">
             <Sparkles className="w-3.5 h-3.5" /> Schema Terdeteksi
@@ -562,7 +512,6 @@ export default function NewTemplatePage() {
           {(parseStatus === "success" || parseStatus === "warning") && parsedSchema && (
             <div className="border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
 
-              {/* Color palette swatch */}
               {parsedSchema.color_palette?.length > 0 && (
                 <div className="flex h-3">
                   {parsedSchema.color_palette.map((c, i) => (
@@ -573,7 +522,6 @@ export default function NewTemplatePage() {
 
               <div className="p-5 space-y-4">
 
-                {/* Name & category */}
                 <div>
                   <p className="font-bold text-gray-900 text-base">
                     {parsedSchema.name ?? <span className="text-gray-400 font-normal italic">Nama tidak ditemukan</span>}
@@ -593,7 +541,6 @@ export default function NewTemplatePage() {
                   </div>
                 </div>
 
-                {/* Stats */}
                 <div className="grid grid-cols-2 gap-3">
                   <div className="bg-gray-50 rounded-xl p-3 text-center">
                     <p className="text-2xl font-bold text-gray-900">{parsedSchema.section_count ?? "–"}</p>
@@ -605,7 +552,6 @@ export default function NewTemplatePage() {
                   </div>
                 </div>
 
-                {/* Tags */}
                 {parsedSchema.tags?.length > 0 && (
                   <div className="flex flex-wrap gap-1.5">
                     {parsedSchema.tags.map((tag) => (
@@ -616,7 +562,6 @@ export default function NewTemplatePage() {
                   </div>
                 )}
 
-                {/* File info */}
                 <div className="pt-2 border-t border-gray-100 space-y-1">
                   <div className="flex justify-between text-xs text-gray-400">
                     <span>Nama file</span>
@@ -653,7 +598,6 @@ export default function NewTemplatePage() {
             </div>
           )}
 
-          {/* Info box */}
           <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 space-y-2">
             <p className="text-xs font-semibold text-blue-700 flex items-center gap-1.5">
               <Eye className="w-3.5 h-3.5" /> Setelah upload
