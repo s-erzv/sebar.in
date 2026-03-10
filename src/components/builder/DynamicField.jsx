@@ -1,18 +1,28 @@
 "use client";
 
-import { Paperclip, X } from "lucide-react";
+import { Paperclip, X, Music, Loader2 } from "lucide-react";
+import { useState } from "react";
 
 export default function DynamicField({ field, value, onChange }) {
+  const [uploading, setUploading] = useState(false);
   const base = "w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all bg-white";
 
-  const handleFileUpload = (e, multiple = false) => {
+  const handleFileUpload = async (e, type = "image") => {
     const files = Array.from(e.target.files ?? []);
     if (!files.length) return;
-    if (multiple) {
-      onChange([...(value ?? []), ...files.map((f) => URL.createObjectURL(f))]);
+    
+    // Untuk saat ini kita gunakan object URL untuk preview lokal
+    // Di level Page.jsx nanti akan di-upload beneran ke Supabase Storage
+    if (type === "image_multiple") {
+      onChange([...(value ?? []), ...files.map((f) => ({ file: f, url: URL.createObjectURL(f) }))]);
     } else {
-      onChange(URL.createObjectURL(files[0]));
+      onChange({ file: files[0], url: URL.createObjectURL(files[0]) });
     }
+  };
+
+  const getDisplayValue = (val) => {
+    if (typeof val === 'string') return val;
+    return val?.url || "";
   };
 
   switch (field.type) {
@@ -22,37 +32,13 @@ export default function DynamicField({ field, value, onChange }) {
     case "textarea":
       return <textarea rows={3} value={value ?? ""} onChange={(e) => onChange(e.target.value)}
         placeholder={field.placeholder ?? ""} maxLength={field.max_length} className={`${base} resize-none`} />;
-    case "datetime":
-      return <input type="datetime-local" value={value ?? ""} onChange={(e) => onChange(e.target.value)} className={base} />;
-    case "url":
-      return <input type="url" value={value ?? ""} onChange={(e) => onChange(e.target.value)}
-        placeholder={field.placeholder ?? "https://"} className={`${base} font-mono text-xs`} />;
-    case "number":
-      return <input type="number" value={value ?? field.default ?? ""} onChange={(e) => onChange(Number(e.target.value))}
-        min={field.min} max={field.max} className={base} />;
-    case "color":
-      return (
-        <div className="flex items-center gap-3">
-          <input type="color" value={value ?? "#000000"} onChange={(e) => onChange(e.target.value)}
-            className="h-9 w-12 rounded cursor-pointer border border-gray-200" />
-          <span className="text-sm font-mono text-gray-500">{value ?? "#000000"}</span>
-        </div>
-      );
-    case "select":
-      return (
-        <select value={value ?? ""} onChange={(e) => onChange(e.target.value)} className={base}>
-          <option value="">-- Pilih --</option>
-          {(field.options ?? []).map((opt) => (
-            <option key={opt.value ?? opt} value={opt.value ?? opt}>{opt.label ?? opt}</option>
-          ))}
-        </select>
-      );
     case "image":
+      const imgUrl = getDisplayValue(value);
       return (
         <div className="space-y-2">
-          {value && (
+          {imgUrl && (
             <div className="relative w-28 h-28 rounded-lg overflow-hidden border border-gray-200">
-              <img src={value} alt="preview" className="w-full h-full object-cover" />
+              <img src={imgUrl} alt="preview" className="w-full h-full object-cover" />
               <button onClick={() => onChange(null)}
                 className="absolute top-1 right-1 w-5 h-5 bg-gray-900/70 rounded-full text-white flex items-center justify-center">
                 <X className="w-3 h-3" />
@@ -60,31 +46,33 @@ export default function DynamicField({ field, value, onChange }) {
             </div>
           )}
           <label className="flex items-center gap-2 cursor-pointer w-fit px-3 py-1.5 border border-dashed border-gray-300 rounded-lg text-xs text-gray-500 hover:border-gray-500 hover:text-gray-700 transition-colors">
-            <Paperclip className="w-3 h-3" /> {value ? "Ganti foto" : "Upload foto"}
-            <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileUpload(e, false)} />
+            <Paperclip className="w-3 h-3" /> {imgUrl ? "Ganti foto" : "Upload foto"}
+            <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileUpload(e, "image")} />
           </label>
         </div>
       );
-    case "image_multiple":
+    case "audio":
+      const audioUrl = getDisplayValue(value);
       return (
         <div className="space-y-2">
-          {value?.length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              {value.map((url, i) => (
-                <div key={i} className="relative w-16 h-16 rounded-lg overflow-hidden border border-gray-200">
-                  <img src={url} alt="" className="w-full h-full object-cover" />
-                  <button onClick={() => onChange(value.filter((_, idx) => idx !== i))}
-                    className="absolute top-0.5 right-0.5 w-4 h-4 bg-gray-900/70 rounded-full text-white flex items-center justify-center">
-                    <X className="w-2.5 h-2.5" />
-                  </button>
-                </div>
-              ))}
+          {audioUrl && (
+            <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-gray-200">
+              <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white">
+                <Music className="w-4 h-4" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[10px] font-bold text-gray-900 truncate">{typeof value === 'string' ? 'Audio terpasang' : value.file?.name}</p>
+                <audio src={audioUrl} controls className="h-6 w-full mt-1 scale-90 origin-left" />
+              </div>
+              <button onClick={() => onChange(null)} className="text-gray-400 hover:text-red-500">
+                <X className="w-4 h-4" />
+              </button>
             </div>
           )}
-          {(!field.max_count || (value?.length ?? 0) < field.max_count) && (
-            <label className="flex items-center gap-2 cursor-pointer w-fit px-3 py-1.5 border border-dashed border-gray-300 rounded-lg text-xs text-gray-500 hover:border-gray-500 transition-colors">
-              <Paperclip className="w-3 h-3" /> Tambah foto {field.max_count ? `(${value?.length ?? 0}/${field.max_count})` : ""}
-              <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => handleFileUpload(e, true)} />
+          {!audioUrl && (
+            <label className="flex items-center gap-2 cursor-pointer w-full px-4 py-3 border-2 border-dashed border-gray-200 rounded-2xl text-xs font-bold text-gray-400 hover:border-gray-900 hover:text-gray-900 transition-all justify-center bg-gray-50/50">
+              <Music className="w-4 h-4" /> Upload Musik (MP3)
+              <input type="file" accept="audio/*" className="hidden" onChange={(e) => handleFileUpload(e, "audio")} />
             </label>
           )}
         </div>

@@ -44,6 +44,7 @@ function BuilderForm() {
   const [selectedTemplate, setTemplate] = useState(null);
   const [content, setContent] = useState({});
   const [slug, setSlug] = useState("");
+  const [guests, setGuests] = useState([]);
   const [invitationId, setInvitationId] = useState(null);
   const [planType, setPlanType] = useState("standard");
   const [initLoading, setInitLoading] = useState(true);
@@ -53,13 +54,12 @@ function BuilderForm() {
 
   useEffect(() => {
     if (!orderId) return;
-    saveDraft(orderId, { templateId: selectedTemplate?.id, template: selectedTemplate, content, slug });
-  }, [content, slug, selectedTemplate, orderId]);
+    saveDraft(orderId, { templateId: selectedTemplate?.id, template: selectedTemplate, content, slug, guests });
+  }, [content, slug, selectedTemplate, orderId, guests]);
 
   useEffect(() => {
     if (!user || !orderId) { setInitLoading(false); return; }
     const load = async () => {
-      // Load order info to get plan type
       const { data: orderData } = await supabase
         .from("orders")
         .select("plan_type")
@@ -76,16 +76,19 @@ function BuilderForm() {
 
       if (data) {
         setInvitationId(data.id);
-        // Pastikan slug terisi dari DB
         if (data.slug) setSlug(data.slug);
         setContent(data.content ?? {});
         if (data.template) { setTemplate(data.template); setStep(1); }
+        
+        const { data: gData } = await supabase.from("guests").select("*").eq("invitation_id", data.id);
+        if (gData) setGuests(gData);
       } else {
         const draft = loadDraft(orderId);
         if (draft) {
           if (draft.template) { setTemplate(draft.template); setStep(1); }
           if (draft.content) setContent(draft.content);
           if (draft.slug) setSlug(draft.slug);
+          if (draft.guests) setGuests(draft.guests);
         }
       }
       setInitLoading(false);
@@ -95,38 +98,78 @@ function BuilderForm() {
 
   const handleSelectTemplate = (tmpl) => {
     setTemplate(tmpl);
-    setContent(tmpl.default_content ?? {});
-    setSlug("");
+    const hasData = Object.keys(content).length > 0;
+    if (!hasData) setContent(tmpl.default_content ?? {});
+    if (!invitationId) setSlug("");
+  };
+
+  const uploadMedia = async (file, path) => {
+    const { data, error } = await supabase.storage
+      .from("invitations-media")
+      .upload(`${user.id}/${path}`, file, { upsert: true });
+    if (error) throw error;
+    const { data: { publicUrl } } = supabase.storage.from("invitations-media").getPublicUrl(data.path);
+    return publicUrl;
   };
 
   const handlePublish = async (isManualSave = false) => {
     if (!selectedTemplate || !slug) return;
     setSaving(true);
-    const payload = {
-      user_id: user.id, order_id: orderId,
-      slug: slug.trim().toLowerCase(),
-      template_id: selectedTemplate.id,
-      template_version: selectedTemplate.current_version ?? 1,
-      content, is_published: true,
-      updated_at: new Date().toISOString(),
-    };
-    const { data, error } = await supabase
-      .from("invitations")
-      .upsert(invitationId ? { id: invitationId, ...payload } : payload, { onConflict: "slug" })
-      .select().single();
+    
+    try {
+      let finalContent = { ...content };
+      let musicUrl = content.music_url;
 
-    if (error) {
-      alert(error.code === "23505" ? "Link sudah digunakan, coba ganti." : "Gagal menyimpan: " + error.message);
-    } else {
+      // Handle Music Upload if it's a file
+      if (content.music_url && typeof content.music_url !== 'string') {
+        const url = await uploadMedia(content.music_url.file, `music_${Date.now()}.mp3`);
+        musicUrl = url;
+        finalContent.music_url = url; // Simpan juga di JSON content untuk kemudahan
+      }
+
+      const payload = {
+        user_id: user.id, order_id: orderId,
+        slug: slug.trim().toLowerCase(),
+        template_id: selectedTemplate.id,
+        template_version: selectedTemplate.current_version ?? 1,
+        content: finalContent,
+        music_url: typeof musicUrl === 'string' ? musicUrl : null,
+        is_published: true,
+        updated_at: new Date().toISOString(),
+      };
+
+      const { data: invData, error: invError } = await supabase
+        .from("invitations")
+        .upsert(invitationId ? { id: invitationId, ...payload } : payload, { onConflict: "slug" })
+        .select().single();
+
+      if (invError) throw invError;
+      const currentInvId = invData.id;
+
+      // Sync Guests (Premium only)
+      if (planType === "premium" && guests.length > 0) {
+        const guestPayload = guests.map(g => ({
+          ...(g.id.length > 30 ? { id: g.id } : {}), 
+          invitation_id: currentInvId,
+          name: g.name,
+          whatsapp: g.whatsapp,
+          custom_data: g.custom_data || {}
+        }));
+        await supabase.from("guests").upsert(guestPayload);
+      }
+
       if (orderId) localStorage.removeItem(LS_KEY(orderId));
       
       if (isManualSave) {
-        // Jika manual save (klik tombol simpan di step 1), jangan redirect
         alert("Perubahan berhasil disimpan!");
-        if (!invitationId) setInvitationId(data.id);
+        if (!invitationId) setInvitationId(currentInvId);
+        setContent(finalContent); // Update local state with public URL
       } else {
-        router.push(`/dashboard/user/orders?published=${data.slug}`);
+        router.push(`/dashboard/user/orders?published=${invData.slug}`);
       }
+    } catch (error) {
+      console.error(error);
+      alert("Gagal menyimpan: " + error.message);
     }
     setSaving(false);
   };
@@ -151,7 +194,6 @@ function BuilderForm() {
       </div>
 
       <div className={`flex flex-1 ${showPreview ? "divide-x divide-gray-200" : ""}`}>
-
         <div className={`${showPreview ? "w-1/2 xl:w-[45%]" : "w-full max-w-2xl mx-auto"} overflow-y-auto pb-28`}>
           <div className="p-6 space-y-6">
             {step === 0 && (
@@ -165,12 +207,13 @@ function BuilderForm() {
               <StepFillContent
                 template={selectedTemplate} content={content} onChange={setContent}
                 slug={slug} onSlugChange={setSlug}
+                planType={planType} guests={guests} onGuestsChange={setGuests}
               />
             )}
             {step === 2 && selectedTemplate && (
               <StepReview
                 template={selectedTemplate} content={content} slug={slug}
-                onPublish={handlePublish} saving={saving}
+                onPublish={() => handlePublish(false)} saving={saving}
               />
             )}
           </div>
