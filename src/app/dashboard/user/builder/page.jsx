@@ -45,6 +45,7 @@ function BuilderForm() {
   const [content, setContent] = useState({});
   const [slug, setSlug] = useState("");
   const [invitationId, setInvitationId] = useState(null);
+  const [planType, setPlanType] = useState("standard");
   const [initLoading, setInitLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -58,6 +59,15 @@ function BuilderForm() {
   useEffect(() => {
     if (!user || !orderId) { setInitLoading(false); return; }
     const load = async () => {
+      // Load order info to get plan type
+      const { data: orderData } = await supabase
+        .from("orders")
+        .select("plan_type")
+        .eq("id", orderId)
+        .maybeSingle();
+      
+      if (orderData?.plan_type) setPlanType(orderData.plan_type);
+
       const { data } = await supabase
         .from("invitations")
         .select("*, template:templates(id, name, slug, category, is_premium, preview_image_url, color_palette, tags, description, content_schema, default_content, current_version)")
@@ -145,7 +155,11 @@ function BuilderForm() {
         <div className={`${showPreview ? "w-1/2 xl:w-[45%]" : "w-full max-w-2xl mx-auto"} overflow-y-auto pb-28`}>
           <div className="p-6 space-y-6">
             {step === 0 && (
-              <StepChooseTemplate selectedId={selectedTemplate?.id} onSelect={handleSelectTemplate} />
+              <StepChooseTemplate 
+                selectedId={selectedTemplate?.id} 
+                onSelect={handleSelectTemplate} 
+                planType={planType}
+              />
             )}
             {step === 1 && selectedTemplate && (
               <StepFillContent
