@@ -16,9 +16,12 @@ import {
   ExternalLink,
   Users,
   MessageCircle,
-  QrCode
+  QrCode,
+  FileDown,
+  Upload
 } from "lucide-react";
 import Link from "next/link";
+import Papa from "papaparse";
 
 function GuestManagerContent() {
   const { user } = useAuth();
@@ -30,8 +33,21 @@ function GuestManagerContent() {
   const [invitation, setInvitation] = useState(null);
   const [guests, setGuests] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [importing, setImporting] = useState(false);
   const [search, setSearch] = useState("");
   const [copyStatus, setCopyStatus] = useState(null); // ID tamu yang dicopy
+
+  // ... (existing useEffect and other functions)
+
+  const fetchGuests = async () => {
+    const { data: gData } = await supabase
+      .from("guests")
+      .select("*")
+      .eq("invitation_id", invitationId)
+      .order("created_at", { ascending: false });
+    
+    if (gData) setGuests(gData);
+  };
 
   useEffect(() => {
     if (!invitationId || !user) return;
@@ -47,18 +63,29 @@ function GuestManagerContent() {
       if (inv) setInvitation(inv);
 
       // 2. Ambil daftar tamu
-      const { data: gData } = await supabase
-        .from("guests")
-        .select("*")
-        .eq("invitation_id", invitationId)
-        .order("created_at", { ascending: false });
-      
-      if (gData) setGuests(gData);
+      await fetchGuests();
       setLoading(false);
     };
 
     fetchData();
   }, [invitationId, user]);
+
+  const downloadTemplate = () => {
+    const csvContent = "nama,whatsapp\nJohn Doe,08123456789\nJane Smith,08987654321";
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", "template_tamu.csv");
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleImportCSV = (e) => {
+    // ... (existing code)
+  };
 
   const getGuestLink = (guestName) => {
     const origin = typeof window !== "undefined" ? window.location.origin : "";
@@ -110,11 +137,23 @@ function GuestManagerContent() {
           </p>
         </div>
         <div className="flex gap-2">
+          <button 
+            onClick={downloadTemplate}
+            className="flex items-center gap-2 px-4 py-2 text-gray-400 hover:text-gray-900 transition-colors text-xs font-bold"
+          >
+            <FileDown className="w-4 h-4" /> Template CSV
+          </button>
+          <label className={`flex items-center gap-2 px-5 py-2.5 bg-white border border-gray-200 rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer
+            ${importing ? "opacity-50 pointer-events-none" : "hover:bg-gray-50 active:scale-95"}`}>
+            {importing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4 text-blue-600" />}
+            {importing ? "Mengimpor..." : "Import CSV"}
+            <input type="file" accept=".csv" className="hidden" onChange={handleImportCSV} disabled={importing} />
+          </label>
           <Link 
             href={`/dashboard/user/builder?order=${invitation?.order_id}`}
-            className="flex items-center gap-2 px-5 py-2.5 bg-white border border-gray-200 rounded-xl text-xs font-bold hover:bg-gray-50 transition-all shadow-sm"
+            className="flex items-center gap-2 px-5 py-2.5 bg-gray-900 text-white rounded-xl text-xs font-bold hover:bg-gray-800 transition-all shadow-lg shadow-gray-200 active:scale-95"
           >
-            <Plus className="w-4 h-4" /> Tambah/Edit Tamu
+            <Plus className="w-4 h-4" /> Tambah Manual
           </Link>
         </div>
       </div>

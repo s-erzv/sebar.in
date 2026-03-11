@@ -1,23 +1,30 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/components/providers/AuthProvider";
 import AccessDenied from "@/components/ui/AccessDenied";
 import {
   ArrowLeft, Upload, FileCode, CheckCircle2, XCircle,
   Loader2, AlertTriangle, ChevronDown, Eye, Sparkles,
-  Tag, Layers, Crown, RefreshCw, Terminal
+  Tag, Layers, Crown, RefreshCw, Terminal, Lock,
+  Heart, Cake, GraduationCap, Mail, Layout, Shield, Check, User, Search, X
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 const CATEGORIES = [
-  { value: "wedding",    label: "Pernikahan",  emoji: "💍" },
-  { value: "birthday",   label: "Ulang Tahun", emoji: "🎂" },
-  { value: "graduation", label: "Wisuda",      emoji: "🎓" },
-  { value: "engagement", label: "Tunangan",    emoji: "💌" },
-  { value: "general",    label: "Umum",        emoji: "✉️" },
+  { value: "wedding",    label: "Pernikahan",  icon: Heart },
+  { value: "birthday",   label: "Ulang Tahun", icon: Cake },
+  { value: "graduation", label: "Wisuda",      icon: GraduationCap },
+  { value: "engagement", label: "Tunangan",    icon: Mail },
+  { value: "general",    label: "Umum",        icon: Layers },
+];
+
+const PLANS = [
+  { value: "standard", label: "Standard", desc: "Semua user", icon: Layout },
+  { value: "premium",  label: "Premium",  desc: "User paket Premium", icon: Crown },
+  { value: "private",  label: "Private",  desc: "User terpilih (Multi)", icon: Lock },
 ];
 
 function extractBraceBlock(text, startIndex) {
@@ -38,14 +45,12 @@ function parseSchemaFromJSX(jsxText) {
   try {
     const schemaHeaderMatch = jsxText.match(/export\s+const\s+TEMPLATE_SCHEMA\s*=\s*\{/);
     if (!schemaHeaderMatch) return null;
-
     const schemaStart = schemaHeaderMatch.index + schemaHeaderMatch[0].length - 1;
     const schemaBlock = extractBraceBlock(jsxText, schemaStart);
     if (!schemaBlock) return null;
-
+    
     const metaHeaderMatch = schemaBlock.match(/\bmeta\s*:\s*\{/);
     if (!metaHeaderMatch) return null;
-
     const metaStart = metaHeaderMatch.index + metaHeaderMatch[0].length - 1;
     const metaBlock = extractBraceBlock(schemaBlock, metaStart);
     if (!metaBlock) return null;
@@ -59,22 +64,10 @@ function parseSchemaFromJSX(jsxText) {
       return m ? m[1] === "true" : false;
     };
     const extractArray = (key) => {
-      const arrHeaderMatch = metaBlock.match(new RegExp(`\\b${key}\\s*:\\s*\\[`));
-      if (!arrHeaderMatch) return [];
-      const arrStart = arrHeaderMatch.index + arrHeaderMatch[0].length - 1;
-      let depth = 0, i = arrStart;
-      while (i < metaBlock.length) {
-        if (metaBlock[i] === "[") depth++;
-        else if (metaBlock[i] === "]") { depth--; if (depth === 0) break; }
-        i++;
-      }
-      const arrContent = metaBlock.slice(arrStart + 1, i);
-      return arrContent.match(/["\'\`]([^"\'\`]+)["\'\`]/g)
-        ?.map((s) => s.replace(/["\'\`]/g, "")) ?? [];
+      const arrMatch = metaBlock.match(new RegExp(`\\b${key}\\s*:\\s*\\[([^\\]]+)\\]`));
+      if (!arrMatch) return [];
+      return arrMatch[1].match(/["\'\`]([^"\'\`]+)["\'\`]/g)?.map(s => s.replace(/["\'\`]/g, "")) || [];
     };
-
-    const fieldCount   = (schemaBlock.match(/\bkey\s*:/g) || []).length;
-    const sectionCount = (schemaBlock.match(/\bsections\s*:/g) || []).length;
 
     return {
       name:          extract("name"),
@@ -83,28 +76,22 @@ function parseSchemaFromJSX(jsxText) {
       is_premium:    extractBool("is_premium"),
       tags:          extractArray("tags"),
       color_palette: extractArray("color_palette"),
-      field_count:   fieldCount,
-      section_count: sectionCount,
+      field_count:   (schemaBlock.match(/\bkey\s*:/g) || []).length,
+      section_count: (schemaBlock.match(/\bsections\s*:/g) || []).length,
     };
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
 function ParseBadge({ status }) {
   const map = {
-    idle:     { color: "bg-gray-100 text-gray-500",   icon: null,            text: "Belum diupload" },
-    reading:  { color: "bg-blue-50 text-blue-600",    icon: <Loader2 className="w-3 h-3 animate-spin" />, text: "Membaca file..." },
-    success:  { color: "bg-emerald-50 text-emerald-700", icon: <CheckCircle2 className="w-3 h-3" />, text: "Schema terdeteksi" },
-    warning:  { color: "bg-amber-50 text-amber-700",  icon: <AlertTriangle className="w-3 h-3" />, text: "Schema tidak lengkap" },
-    error:    { color: "bg-red-50 text-red-600",      icon: <XCircle className="w-3 h-3" />,       text: "Parse gagal" },
+    idle:     { color: "bg-gray-100 text-gray-500",   text: "Belum upload" },
+    reading:  { color: "bg-blue-50 text-blue-600",    icon: <Loader2 className="w-3 h-3 animate-spin" />, text: "Membaca..." },
+    success:  { color: "bg-emerald-50 text-emerald-700", icon: <CheckCircle2 className="w-3 h-3" />, text: "Schema OK" },
+    warning:  { color: "bg-amber-50 text-amber-700",  icon: <AlertTriangle className="w-3 h-3" />, text: "Parsial" },
+    error:    { color: "bg-red-50 text-red-600",      icon: <XCircle className="w-3 h-3" />,       text: "Gagal" },
   };
   const s = map[status] ?? map.idle;
-  return (
-    <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full ${s.color}`}>
-      {s.icon}{s.text}
-    </span>
-  );
+  return <span className={`inline-flex items-center gap-1.5 text-[10px] font-bold uppercase px-2 py-1 rounded-md ${s.color}`}>{s.icon}{s.text}</span>;
 }
 
 export default function NewTemplatePage() {
@@ -112,502 +99,227 @@ export default function NewTemplatePage() {
   const supabase = createClient();
   const router = useRouter();
   const fileInputRef = useRef(null);
+  const dropdownRef = useRef(null);
 
   const [slug, setSlug]         = useState("");
-  const [isPremium, setIsPremium] = useState(false);
   const [category, setCategory] = useState("general");
+  const [selectedPlan, setSelectedPlan] = useState("standard");
+  const [selectedUserIds, setSelectedUserIds] = useState([]);
   const [changelog, setChangelog] = useState("");
+  const [users, setUsers] = useState([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [userSearch, setUserSearch] = useState("");
 
   const [jsxFile, setJsxFile]   = useState(null);      
-  const [jsxText, setJsxText]   = useState("");         
   const [parseStatus, setParseStatus] = useState("idle");
   const [parsedSchema, setParsedSchema] = useState(null);
-  const [parseErrors, setParseErrors]   = useState([]);
-
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [isDragging, setIsDragging] = useState(false);
 
-  const handleDrop = useCallback((e) => {
-    e.preventDefault();
-    setIsDragging(false);
-    const file = e.dataTransfer.files[0];
-    if (file) processFile(file);
+  useEffect(() => {
+    fetchUsers();
+    const handleClickOutside = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) setIsDropdownOpen(false);
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    if (file) processFile(file);
+  const fetchUsers = async () => {
+    setLoadingUsers(true);
+    const { data } = await supabase.from("profiles").select("id, full_name").order("full_name", { ascending: true });
+    if (data) setUsers(data);
+    setLoadingUsers(false);
   };
 
-  const processFile = async (file) => {
-    if (!file.name.endsWith(".jsx") && !file.name.endsWith(".tsx")) {
-      setParseStatus("error");
-      setParseErrors(["File harus berekstensi .jsx atau .tsx"]);
-      return;
-    }
-    if (file.size > 500 * 1024) {
-      setParseStatus("error");
-      setParseErrors(["Ukuran file maksimal 500KB"]);
-      return;
-    }
+  const toggleUser = (userId) => {
+    setSelectedUserIds(prev => prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]);
+  };
 
+  const filteredUsers = users.filter(u => u.full_name.toLowerCase().includes(userSearch.toLowerCase()));
+
+  const processFile = async (file) => {
+    if (!file?.name.endsWith(".jsx")) return;
     setJsxFile(file);
     setParseStatus("reading");
-    setParseErrors([]);
-    setParsedSchema(null);
-
     const text = await file.text();
-    setJsxText(text);
-
-    const errors = [];
-    if (!text.includes("export const TEMPLATE_SCHEMA")) {
-      errors.push("Tidak ada `export const TEMPLATE_SCHEMA` — wajib ada di file");
-    }
-    if (!text.includes("export default")) {
-      errors.push("Tidak ada `export default` — wajib ada React component sebagai default export");
-    }
-
-    const forbiddenImportPatterns = [
-      { pattern: /^\s*import\s+.*from\s+['"]axios['"]/m,        label: "axios" },
-      { pattern: /^\s*import\s+.*from\s+['"]node-fetch['"]/m,   label: "node-fetch" },
-      { pattern: /^\s*import\s+.*from\s+['"]fs['"]/m,           label: "fs" },
-      { pattern: /^\s*import\s+.*from\s+['"]child_process['"]/m, label: "child_process" },
-      { pattern: /^\s*import\s+.*from\s+['"]path['"]/m,         label: "path" },
-      { pattern: /(?<![/]{2}.*)\brequire\s*\(\s*['"]/m,         label: "require()" },      // eval() — sama
-      { pattern: /(?<![/]{2}.*)\beval\s*\(/m,                   label: "eval()" },
-    ];
-    forbiddenImportPatterns.forEach(({ pattern, label }) => {
-      if (pattern.test(text)) errors.push(`Penggunaan "${label}" tidak diizinkan`);
-    });
-
-    if (errors.length > 0) {
-      setParseStatus("error");
-      setParseErrors(errors);
-      return;
-    }
-
     const schema = parseSchemaFromJSX(text);
-
-    if (!schema || !schema.name) {
-      setParseStatus("warning");
-      setParseErrors(["TEMPLATE_SCHEMA.meta.name tidak ditemukan. Pastikan format sesuai konvensi."]);
-      setParsedSchema(schema);
-      return;
-    }
-
+    if (!schema) { setParseStatus("error"); return; }
     if (schema.category) setCategory(schema.category);
-    if (schema.name) {
-      const autoSlug = schema.name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
-      setSlug(autoSlug);
-    }
-    if (schema.is_premium !== undefined) setIsPremium(schema.is_premium);
-
+    if (schema.name) setSlug(schema.name.toLowerCase().replace(/[^a-z0-9]+/g, "-"));
+    if (schema.is_premium) setSelectedPlan("premium");
     setParsedSchema(schema);
     setParseStatus("success");
   };
 
   const handleSubmit = async () => {
-    if (!jsxFile || parseStatus === "error") return;
-    if (!slug.trim()) { 
-        setSubmitError("Slug wajib diisi"); 
-        return; 
+    if (!jsxFile || !slug.trim() || submitting) return;
+    if (selectedPlan === "private" && selectedUserIds.length === 0) {
+        setSubmitError("Pilih minimal satu user.");
+        return;
     }
 
     setSubmitting(true);
-    setSubmitError("");
-
     const templateId = crypto.randomUUID();
     const finalPath = `${templateId}/v1/component.jsx`;
     
-    let fileUploaded = false;
-
     try {
-        const { error: uploadErr } = await supabase.storage
-        .from("templates-source")
-        .upload(finalPath, jsxFile, { 
-            contentType: "text/plain", 
-            upsert: false 
-        });
+        const { error: upErr } = await supabase.storage.from("templates-source").upload(finalPath, jsxFile);
+        if (upErr) throw upErr;
 
-        if (uploadErr) {
-        throw new Error(`Storage Error: ${uploadErr.message}`);
-        }
-        
-        fileUploaded = true;
-
-        const { error: insertErr } = await supabase
-        .from("templates")
-        .insert({
+        const { error: insErr } = await supabase.from("templates").insert({
             id:              templateId,
-            name:            parsedSchema?.name || jsxFile.name.replace(/\.jsx$|\.tsx$/, ""),
+            name:            parsedSchema?.name || jsxFile.name.replace(".jsx", ""),
             slug:            slug.trim().toLowerCase(),
             category:        category,
-            is_premium:      isPremium,
-            is_active:       false,
+            is_premium:      selectedPlan !== "standard",
+            is_active:       true,
             parse_status:    "pending",
             jsx_file_path:   finalPath,
-            content_schema:  {},
-            guest_schema:    {},
-            default_content: {},
-            tags:            parsedSchema?.tags ?? [],
-            color_palette:   parsedSchema?.color_palette ?? [],
-            current_version: 1,
+            tags:            parsedSchema?.tags || [],
+            color_palette:   parsedSchema?.color_palette || [],
+        });
+        if (insErr) throw insErr;
+
+        if (selectedPlan === "private") {
+            const accessData = selectedUserIds.map(uid => ({ template_id: templateId, user_id: uid }));
+            await supabase.from("template_access").insert(accessData);
+        }
+
+        await fetch("/api/admin/templates/parse", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ templateId, version: 1 }),
         });
 
-        if (insertErr) {
-        throw new Error(`Database Error: ${insertErr.message}`);
-        }
+        router.push(`/dashboard/admin/templates`);
+    } catch (err) { setSubmitError(err.message); } finally { setSubmitting(false); }
+  };
 
-
-        const { error: versionErr } = await supabase
-        .from("template_versions")
-        .insert({
-            template_id:   templateId,
-            version:       1,
-            jsx_file_path: finalPath,
-            changelog:     changelog || "Initial upload",
-        });
-
-        if (versionErr) {
-        console.warn("Version log failed, but template was created:", versionErr.message);
-        }
-
-        
-        const parseResponse = await fetch("/api/admin/templates/parse", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ templateId, version: 1 }),
-        });
-
-        if (!parseResponse.ok) {
-        const parseData = await parseResponse.json();
-        throw new Error(`Compiler Error: ${parseData.error || "Gagal memicu parser"}`);
-        }
-
-        router.push(`/dashboard/admin?tab=templates&new=${templateId}`);
-        router.refresh();
-
-    } catch (err) {
-        console.error("Upload process failed:", err);
-        setSubmitError(err.message);
-
-        if (fileUploaded) {
-        await supabase.storage.from("templates-source").remove([finalPath]);
-        }
-    } finally {
-        setSubmitting(false);
-    }
-    };
-
-  if (authLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="animate-spin text-gray-400 w-6 h-6" />
-      </div>
-    );
-  }
+  if (authLoading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-gray-400" /></div>;
   if (profile?.role !== "admin") return <AccessDenied />;
 
   return (
-    <div className="max-w-5xl mx-auto py-8 px-4 space-y-8 font-sans">
-
+    <div className="max-w-5xl mx-auto py-8 px-4 space-y-8 text-gray-800 pb-32">
       <div className="flex items-center justify-between">
-        <Link
-          href="/dashboard/admin"
-          className="text-sm text-gray-400 flex items-center gap-2 hover:text-gray-700 transition-colors"
-        >
-          <ArrowLeft className="w-4 h-4" /> Kembali
+        <Link href="/dashboard/admin/templates" className="text-xs font-medium text-gray-400 flex items-center gap-2 hover:text-gray-700">
+          <ArrowLeft className="w-3 h-3" /> KEMBALI
         </Link>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-4">
           <ParseBadge status={parseStatus} />
-          <button
-            onClick={handleSubmit}
-            disabled={submitting || !jsxFile || parseStatus === "error" || parseStatus === "reading"}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold
-                       bg-gray-900 text-white hover:bg-gray-700 disabled:opacity-40
-                       disabled:cursor-not-allowed transition-all shadow-sm"
-          >
-            {submitting
-              ? <Loader2 className="w-4 h-4 animate-spin" />
-              : <Upload className="w-4 h-4" />}
-            {submitting ? "Mengupload..." : "Upload Template"}
+          <button onClick={handleSubmit} disabled={submitting || !jsxFile} className="px-6 py-2.5 bg-gray-900 text-white rounded-lg text-xs font-medium hover:bg-gray-800 disabled:opacity-40 transition-all flex items-center gap-2">
+            {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />} SIMPAN TEMPLATE
           </button>
         </div>
       </div>
 
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Upload Template Baru</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Upload file <code className="bg-gray-100 px-1.5 py-0.5 rounded text-xs font-mono">.jsx</code> dengan
-          {" "}<code className="bg-gray-100 px-1.5 py-0.5 rounded text-xs font-mono">TEMPLATE_SCHEMA</code>
-          {" "}yang sudah terdefine. Sistem akan otomatis parse schema & compile saat upload.
-        </p>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
-
-        <div className="lg:col-span-3 space-y-6">
-
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="lg:col-span-2 space-y-6">
           <div
-            onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+            onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
             onDragLeave={() => setIsDragging(false)}
-            onDrop={handleDrop}
+            onDrop={e => { e.preventDefault(); setIsDragging(false); processFile(e.dataTransfer.files[0]); }}
             onClick={() => fileInputRef.current?.click()}
-            className={`
-              relative border-2 border-dashed rounded-2xl p-10 text-center cursor-pointer
-              transition-all duration-200 select-none
-              ${isDragging
-                ? "border-gray-900 bg-gray-50 scale-[1.01]"
-                : jsxFile
-                  ? "border-emerald-300 bg-emerald-50/50"
-                  : "border-gray-200 bg-gray-50/50 hover:border-gray-400 hover:bg-white"
-              }
-            `}
+            className={`relative border-2 border-dashed rounded-xl p-12 text-center cursor-pointer transition-all ${isDragging ? "border-blue-500 bg-blue-50" : "border-gray-200 hover:border-gray-400 bg-white"}`}
           >
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".jsx,.tsx"
-              className="hidden"
-              onChange={handleFileChange}
-            />
-
+            <input ref={fileInputRef} type="file" accept=".jsx" className="hidden" onChange={e => processFile(e.target.files[0])} />
             {jsxFile ? (
-              <div className="space-y-2">
-                <div className="w-12 h-12 rounded-2xl bg-emerald-100 flex items-center justify-center mx-auto">
-                  <FileCode className="w-6 h-6 text-emerald-600" />
-                </div>
-                <p className="font-semibold text-gray-800 text-sm">{jsxFile.name}</p>
-                <p className="text-xs text-gray-400">
-                  {(jsxFile.size / 1024).toFixed(1)} KB · Klik untuk ganti file
-                </p>
-              </div>
+              <div className="space-y-2"><FileCode className="w-10 h-10 text-blue-500 mx-auto" /><p className="font-medium text-sm">{jsxFile.name}</p></div>
             ) : (
-              <div className="space-y-3">
-                <div className="w-12 h-12 rounded-2xl bg-gray-200 flex items-center justify-center mx-auto">
-                  <Upload className="w-6 h-6 text-gray-400" />
-                </div>
-                <div>
-                  <p className="font-medium text-gray-700 text-sm">Drop file JSX di sini</p>
-                  <p className="text-xs text-gray-400 mt-1">atau klik untuk browse · maks 500KB</p>
-                </div>
-              </div>
+              <div className="space-y-2"><Upload className="w-10 h-10 text-gray-300 mx-auto" /><p className="text-sm text-gray-400 font-medium">Klik atau drop file JSX di sini</p></div>
             )}
           </div>
 
-          {parseErrors.length > 0 && (
-            <div className="rounded-xl border border-red-200 bg-red-50 p-4 space-y-2">
-              <div className="flex items-center gap-2 text-red-700 font-semibold text-sm">
-                <Terminal className="w-4 h-4" /> Masalah ditemukan
-              </div>
-              <ul className="space-y-1">
-                {parseErrors.map((e, i) => (
-                  <li key={i} className="text-xs text-red-600 font-mono flex items-start gap-2">
-                    <span className="text-red-400 mt-px">›</span> {e}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          <div className="bg-white border border-gray-200 rounded-2xl divide-y divide-gray-100 shadow-sm">
-
-            <div className="p-5 space-y-1.5">
-              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-1.5">
-                <Tag className="w-3.5 h-3.5" /> Slug URL
-              </label>
-              <div className="flex items-center gap-0 border border-gray-200 rounded-lg overflow-hidden focus-within:ring-2 focus-within:ring-gray-900 focus-within:border-transparent">
-                <span className="px-3 py-2.5 text-xs text-gray-400 bg-gray-50 border-r border-gray-200 font-mono whitespace-nowrap">
-                  /templates/
-                </span>
-                <input
-                  type="text"
-                  value={slug}
-                  onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
-                  placeholder="elegant-rose"
-                  className="flex-1 px-3 py-2.5 text-sm font-mono outline-none bg-white"
-                />
-              </div>
-              <p className="text-xs text-gray-400">
-                Auto-diisi dari <code className="font-mono">meta.name</code> jika ada
-              </p>
-            </div>
-
-            <div className="p-5 space-y-1.5">
-              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-1.5">
-                <Layers className="w-3.5 h-3.5" /> Kategori
-              </label>
-              <div className="relative">
-                <select
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                  className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-lg outline-none
-                             appearance-none focus:ring-2 focus:ring-gray-900 focus:border-transparent bg-white"
-                >
-                  {CATEGORIES.map((c) => (
-                    <option key={c.value} value={c.value}>
-                      {c.emoji} {c.label}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-              </div>
-              <p className="text-xs text-gray-400">Auto-diisi dari <code className="font-mono">meta.category</code> jika ada</p>
-            </div>
-
-            <div className="p-5 space-y-4">
-              <label className="flex items-center justify-between cursor-pointer group">
-                <span className="flex items-center gap-2 text-sm font-medium text-gray-700">
-                  <Crown className="w-4 h-4 text-amber-500" /> Template Premium
-                </span>
-                <div
-                  onClick={() => setIsPremium(!isPremium)}
-                  className={`w-11 h-6 rounded-full transition-colors relative ${isPremium ? "bg-gray-900" : "bg-gray-200"}`}
-                >
-                  <div className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-all ${isPremium ? "left-6" : "left-1"}`} />
-                </div>
-              </label>
-
+          <div className="bg-white border border-gray-200 rounded-xl shadow-sm relative z-10">
+            <div className="p-4 bg-gray-50 border-b border-gray-100 flex items-center gap-2 font-medium text-xs text-gray-500 uppercase tracking-widest rounded-t-xl"><Layers size={14} /> Informasi Desain</div>
+            <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                  Changelog / Catatan Upload
-                </label>
-                <textarea
-                  rows={2}
-                  value={changelog}
-                  onChange={(e) => setChangelog(e.target.value)}
-                  placeholder="Contoh: Initial upload, fix animasi cover, tambah section galeri..."
-                  className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-lg outline-none
-                             focus:ring-2 focus:ring-gray-900 resize-none"
-                />
+                <label className="text-[10px] font-semibold text-gray-400 uppercase">Slug URL</label>
+                <div className="flex items-center border border-gray-200 rounded-lg px-3 bg-gray-50 py-2"><span className="text-xs text-gray-400 mr-1">sebar.in/</span><input type="text" value={slug} onChange={e => setSlug(e.target.value.toLowerCase())} className="flex-1 text-sm bg-transparent outline-none" /></div>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-semibold text-gray-400 uppercase">Kategori Acara</label>
+                <div className="relative">
+                  <select value={category} onChange={e => setCategory(e.target.value)} className="w-full pl-3 pr-8 py-2 text-sm border border-gray-200 rounded-lg outline-none appearance-none bg-white">
+                    {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                  </select>
+                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                </div>
               </div>
             </div>
           </div>
 
-          {submitError && (
-            <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
-              <XCircle className="w-4 h-4 shrink-0" /> {submitError}
-            </div>
-          )}
-        </div>
+          <div className="bg-white border border-gray-200 rounded-xl shadow-sm relative z-20">
+            <div className="p-4 bg-gray-50 border-b border-gray-100 flex items-center gap-2 font-medium text-xs text-gray-500 uppercase tracking-widest rounded-t-xl"><Shield size={14} /> Akses & Paket</div>
+            <div className="p-6 space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {PLANS.map(p => (
+                  <button key={p.value} onClick={() => setSelectedPlan(p.value)} className={`p-4 border rounded-xl text-left transition-all ${selectedPlan === p.value ? "border-blue-600 bg-blue-50 ring-1 ring-blue-600" : "border-gray-200 hover:border-gray-300"}`}>
+                    <p.icon size={18} className={selectedPlan === p.value ? "text-blue-600" : "text-gray-400"} />
+                    <p className="font-semibold text-xs mt-3">{p.label}</p>
+                    <p className="text-[9px] text-gray-500 mt-1">{p.desc}</p>
+                  </button>
+                ))}
+              </div>
 
-        <div className="lg:col-span-2 space-y-4">
-          <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wide flex items-center gap-2">
-            <Sparkles className="w-3.5 h-3.5" /> Schema Terdeteksi
-          </h2>
-
-          {parseStatus === "idle" && (
-            <div className="border border-dashed border-gray-200 rounded-2xl p-8 text-center text-gray-400 text-sm">
-              Upload file JSX untuk melihat schema
-            </div>
-          )}
-
-          {parseStatus === "reading" && (
-            <div className="border border-gray-200 rounded-2xl p-8 flex items-center justify-center gap-3 text-gray-500 text-sm">
-              <Loader2 className="w-4 h-4 animate-spin" /> Membaca file...
-            </div>
-          )}
-
-          {(parseStatus === "success" || parseStatus === "warning") && parsedSchema && (
-            <div className="border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
-
-              {parsedSchema.color_palette?.length > 0 && (
-                <div className="flex h-3">
-                  {parsedSchema.color_palette.map((c, i) => (
-                    <div key={i} className="flex-1" style={{ backgroundColor: c }} />
-                  ))}
+              {selectedPlan === "private" && (
+                <div className="space-y-2 relative" ref={dropdownRef}>
+                  <label className="text-[10px] font-semibold text-gray-400 uppercase">Pilih User Yang Diizinkan</label>
+                  <div onClick={() => setIsDropdownOpen(!isDropdownOpen)} className="w-full p-2.5 border border-gray-200 rounded-lg bg-white flex items-center justify-between cursor-pointer hover:border-gray-400 transition-all">
+                    <span className="text-xs font-medium text-blue-600">{selectedUserIds.length > 0 ? `${selectedUserIds.length} User Dipilih` : "Klik untuk mencari user..."}</span>
+                    <ChevronDown size={16} className={`text-gray-400 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} />
+                  </div>
+                  {isDropdownOpen && (
+                    <div className="absolute z-50 top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden animate-in fade-in zoom-in duration-150">
+                      <div className="p-3 border-b border-gray-100 bg-gray-50 flex items-center gap-2">
+                        <Search size={14} className="text-gray-400" />
+                        <input type="text" placeholder="Cari nama user..." value={userSearch} onChange={e => setUserSearch(e.target.value)} onClick={e => e.stopPropagation()} className="w-full bg-transparent text-sm outline-none" />
+                      </div>
+                      <div className="max-h-60 overflow-y-auto custom-scrollbar p-1">
+                        {filteredUsers.map(u => (
+                          <div key={u.id} onClick={e => { e.stopPropagation(); toggleUser(u.id); }} className={`flex items-center justify-between p-2.5 rounded-lg cursor-pointer transition-colors ${selectedUserIds.includes(u.id) ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-50'}`}>
+                            <div className="flex items-center gap-3">
+                              <div className={`w-4 h-4 rounded border flex items-center justify-center transition-all ${selectedUserIds.includes(u.id) ? 'bg-blue-600 border-blue-600' : 'bg-white border-gray-300'}`}>{selectedUserIds.includes(u.id) && <Check size={10} className="text-white" />}</div>
+                              <span className="text-sm font-medium">{u.full_name}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
+            </div>
+          </div>
+          {submitError && <div className="p-3 bg-red-50 text-red-600 text-[11px] font-medium rounded-lg flex items-center gap-2 border border-red-100"><XCircle size={14} /> {submitError}</div>}
+        </div>
 
-              <div className="p-5 space-y-4">
-
-                <div>
-                  <p className="font-bold text-gray-900 text-base">
-                    {parsedSchema.name ?? <span className="text-gray-400 font-normal italic">Nama tidak ditemukan</span>}
-                  </p>
-                  <div className="flex items-center gap-2 mt-1 flex-wrap">
-                    {parsedSchema.category && (
-                      <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
-                        {CATEGORIES.find((c) => c.value === parsedSchema.category)?.emoji}{" "}
-                        {parsedSchema.category}
-                      </span>
-                    )}
-                    {parsedSchema.is_premium && (
-                      <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full flex items-center gap-1">
-                        <Crown className="w-3 h-3" /> premium
-                      </span>
-                    )}
-                  </div>
+        <div className="space-y-6">
+          <div className="bg-gray-50 border border-gray-200 rounded-xl p-6 space-y-4 sticky top-8">
+            <h2 className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest flex items-center gap-2"><Sparkles size={14} /> Preview Schema</h2>
+            {parsedSchema ? (
+              <div className="space-y-4">
+                <p className="text-base font-semibold text-gray-900 leading-tight">{parsedSchema.name}</p>
+                <div className="flex flex-wrap gap-2">
+                  <span className="text-[10px] bg-white border border-gray-200 px-2 py-1 rounded-md font-medium text-gray-500 capitalize">{category}</span>
+                  <span className={`text-[10px] px-2 py-1 rounded-md font-bold ${selectedPlan === 'standard' ? 'bg-gray-200 text-gray-600' : 'bg-amber-100 text-amber-700'}`}>{selectedPlan.toUpperCase()}</span>
                 </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="bg-gray-50 rounded-xl p-3 text-center">
-                    <p className="text-2xl font-bold text-gray-900">{parsedSchema.section_count ?? "–"}</p>
-                    <p className="text-xs text-gray-400 mt-0.5">Seksi form</p>
-                  </div>
-                  <div className="bg-gray-50 rounded-xl p-3 text-center">
-                    <p className="text-2xl font-bold text-gray-900">{parsedSchema.field_count ?? "–"}</p>
-                    <p className="text-xs text-gray-400 mt-0.5">Total field</p>
-                  </div>
-                </div>
-
-                {parsedSchema.tags?.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5">
-                    {parsedSchema.tags.map((tag) => (
-                      <span key={tag} className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">
-                        #{tag}
-                      </span>
+                {parsedSchema.color_palette?.length > 0 && (
+                  <div className="flex gap-1.5 pt-2">
+                    {parsedSchema.color_palette.map((c, i) => (
+                      <div key={i} className="w-4 h-4 rounded-full border border-white shadow-sm" style={{ backgroundColor: c }} />
                     ))}
                   </div>
                 )}
-
-                <div className="pt-2 border-t border-gray-100 space-y-1">
-                  <div className="flex justify-between text-xs text-gray-400">
-                    <span>Nama file</span>
-                    <span className="font-mono text-gray-600">{jsxFile?.name}</span>
-                  </div>
-                  <div className="flex justify-between text-xs text-gray-400">
-                    <span>Ukuran</span>
-                    <span className="font-mono text-gray-600">{jsxFile ? (jsxFile.size / 1024).toFixed(1) + " KB" : "–"}</span>
-                  </div>
-                  <div className="flex justify-between text-xs text-gray-400">
-                    <span>Compile status</span>
-                    <span className="text-amber-600 font-medium">Pending (server-side)</span>
-                  </div>
+                <div className="pt-4 border-t border-gray-200 grid grid-cols-2 gap-4">
+                  <div><p className="text-[9px] text-gray-400 font-bold uppercase">Section</p><p className="text-lg font-bold">{parsedSchema.section_count}</p></div>
+                  <div><p className="text-[9px] text-gray-400 font-bold uppercase">Field</p><p className="text-lg font-bold">{parsedSchema.field_count}</p></div>
                 </div>
               </div>
-            </div>
-          )}
-
-          {parseStatus === "error" && (
-            <div className="border border-red-200 rounded-2xl p-6 text-center space-y-3">
-              <XCircle className="w-8 h-8 text-red-400 mx-auto" />
-              <p className="text-sm text-red-600 font-medium">File tidak valid</p>
-              <p className="text-xs text-gray-400">Perbaiki error di atas lalu upload ulang</p>
-              <button
-                onClick={() => {
-                  setJsxFile(null); setJsxText(""); setParseStatus("idle");
-                  setParseErrors([]); setParsedSchema(null);
-                  if (fileInputRef.current) fileInputRef.current.value = "";
-                }}
-                className="flex items-center gap-1.5 mx-auto text-xs text-gray-500 hover:text-gray-800 transition-colors"
-              >
-                <RefreshCw className="w-3 h-3" /> Reset
-              </button>
-            </div>
-          )}
-
-          <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 space-y-2">
-            <p className="text-xs font-semibold text-blue-700 flex items-center gap-1.5">
-              <Eye className="w-3.5 h-3.5" /> Setelah upload
-            </p>
-            <ul className="text-xs text-blue-600 space-y-1 leading-relaxed">
-              <li>· Server akan compile JSX → JS bundle via esbuild</li>
-              <li>· Schema lengkap di-extract dari <code className="font-mono">TEMPLATE_SCHEMA</code></li>
-              <li>· Preview iframe otomatis aktif setelah compile selesai</li>
-              <li>· Template bisa diaktifkan manual dari halaman detail</li>
-            </ul>
+            ) : <p className="text-xs text-gray-400 italic">Upload file untuk melihat meta.</p>}
           </div>
         </div>
       </div>

@@ -1,13 +1,14 @@
 // src/app/dashboard/admin/page.jsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/components/providers/AuthProvider";
 import AccessDenied from "@/components/ui/AccessDenied";
 import { 
   Loader2, CheckCircle2, XCircle, Clock, 
-  ExternalLink, Search 
+  ExternalLink, Search, TrendingUp, Users, 
+  CreditCard, Layout, Filter, CheckCircle, AlertCircle
 } from "lucide-react";
 
 export default function AdminDashboard() {
@@ -15,192 +16,181 @@ export default function AdminDashboard() {
   const supabase = createClient();
   
   const [orders, setOrders] = useState([]);
-  const [isFetchingOrders, setIsFetchingOrders] = useState(true);
+  const [stats, setStats] = useState({
+    totalOrders: 0,
+    totalRevenue: 0,
+    activeInvitations: 0,
+    mostUsedTemplate: "Loading..."
+  });
+  const [isFetching, setIsFetching] = useState(true);
   const [actionLoading, setActionLoading] = useState(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
 
   useEffect(() => {
     if (authLoading || profile?.role !== "admin") return;
 
-    const fetchOrders = async () => {
-      const { data, error } = await supabase
+    const fetchData = async () => {
+      setIsFetching(true);
+      const { data: ordersData, error: ordersError } = await supabase
         .from("orders")
-        .select(`
-          *,
-          profiles:user_id (full_name)
-        `)
+        .select(`*, profiles:user_id (full_name)`)
         .order("created_at", { ascending: false });
 
-      if (!error && data) {
-        setOrders(data);
-      } else if (error) {
-        console.error("Error fetching orders:", error.message);
-      }
-      setIsFetchingOrders(false);
+      if (ordersData) setOrders(ordersData);
+
+      const { count: invCount } = await supabase
+        .from("invitations")
+        .select("*", { count: 'exact', head: true })
+        .eq("is_published", true);
+
+      const verifiedOrders = ordersData?.filter(o => o.status === 'verified') || [];
+      const revenue = verifiedOrders.reduce((sum, o) => sum + (o.amount || 0), 0);
+
+      const { data: popularData } = await supabase
+        .from("invitations")
+        .select("template_id, templates(name)");
+      
+      const templateCounts = {};
+      popularData?.forEach(inv => {
+        const name = inv.templates?.name || "Unknown";
+        templateCounts[name] = (templateCounts[name] || 0) + 1;
+      });
+      
+      const mostUsed = Object.entries(templateCounts).sort((a,b) => b[1] - a[1])[0]?.[0] || "None";
+
+      setStats({
+        totalOrders: ordersData?.length || 0,
+        totalRevenue: revenue,
+        activeInvitations: invCount || 0,
+        mostUsedTemplate: mostUsed
+      });
+
+      setIsFetching(false);
     };
 
-    fetchOrders();
+    fetchData();
   }, [authLoading, profile, supabase]);
+
+  const filteredOrders = useMemo(() => {
+    return orders.filter(o => {
+      const name = o.profiles?.full_name?.toLowerCase() || "";
+      const id = o.id.toLowerCase();
+      const matchesSearch = name.includes(searchQuery.toLowerCase()) || id.includes(searchQuery.toLowerCase());
+      const matchesStatus = statusFilter === "all" || o.status === statusFilter;
+      return matchesSearch && matchesStatus;
+    });
+  }, [orders, searchQuery, statusFilter]);
 
   const handleUpdateStatus = async (orderId, newStatus) => {
     setActionLoading(orderId);
-    
     const { error } = await supabase
       .from("orders")
       .update({ status: newStatus, updated_at: new Date().toISOString() })
       .eq("id", orderId);
 
     if (!error) {
-      setOrders((prevOrders) => 
-        prevOrders.map(order => 
-          order.id === orderId ? { ...order, status: newStatus } : order
-        )
-      );
-    } else {
-      alert("Gagal mengupdate status: " + error.message);
+      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
     }
-    
     setActionLoading(null);
   };
 
-  const renderStatusBadge = (status) => {
-    switch (status) {
-      case "pending":
-        return <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200"><Clock className="w-3 h-3" /> Pending</span>;
-      case "verified":
-        return <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-200"><CheckCircle2 className="w-3 h-3" /> Terverifikasi</span>;
-      case "rejected":
-        return <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-700 border border-red-200"><XCircle className="w-3 h-3" /> Ditolak</span>;
-      default:
-        return null;
-    }
-  };
-
-  if (authLoading) {
-    return (
-      <div className="flex justify-center items-center min-h-[60vh]">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-      </div>
-    );
-  }
-
-  if (profile?.role !== "admin") {
-    return <AccessDenied fallbackUrl="/dashboard/user" />;
-  }
+  if (authLoading) return <div className="h-96 flex items-center justify-center"><Loader2 className="animate-spin text-gray-400" /></div>;
+  if (profile?.role !== "admin") return <AccessDenied />;
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="max-w-7xl mx-auto space-y-8 p-4 md:p-6 text-gray-800">
+      
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Validasi Pembayaran</h1>
-          <p className="mt-1 text-gray-500">Periksa bukti transfer dan aktifkan paket pengguna.</p>
-        </div>
-        
-        <div className="relative">
-          <Search className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input 
-            type="text" 
-            placeholder="Cari pesanan..." 
-            className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full sm:w-64 outline-none transition-shadow"
-          />
+          <h1 className="text-2xl font-semibold text-gray-900">Admin Dashboard</h1>
+          <p className="text-gray-500 text-sm">Ringkasan aktivitas sistem dan validasi pembayaran.</p>
         </div>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+      {/* STATS GRID */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard label="Total Pendapatan" value={`Rp ${stats.totalRevenue.toLocaleString("id-ID")}`} sub="Selama ini" />
+        <StatCard label="Total Pesanan" value={stats.totalOrders} sub={`${orders.filter(o => o.status === 'pending').length} pending`} />
+        <StatCard label="Undangan Aktif" value={stats.activeInvitations} sub="Terpublikasi" />
+        <StatCard label="Template Populer" value={stats.mostUsedTemplate} sub="Paling sering dipilih" />
+      </div>
+
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+        <div className="p-4 border-b border-gray-100 flex flex-col md:flex-row justify-between gap-4">
+           <h2 className="text-lg font-medium">Validasi Pembayaran</h2>
+           <div className="flex items-center gap-2">
+             <div className="relative flex-1 md:flex-none">
+               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+               <input 
+                 type="text" 
+                 placeholder="Cari pelanggan..."
+                 value={searchQuery}
+                 onChange={(e) => setSearchQuery(e.target.value)}
+                 className="pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-gray-400 w-full md:w-48 transition-all"
+               />
+             </div>
+             <select 
+               value={statusFilter}
+               onChange={(e) => setStatusFilter(e.target.value)}
+               className="px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-gray-400"
+             >
+               <option value="all">Semua Status</option>
+               <option value="pending">Pending</option>
+               <option value="verified">Verified</option>
+               <option value="rejected">Rejected</option>
+             </select>
+           </div>
+        </div>
+
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-gray-600">
-            <thead className="bg-gray-50 text-gray-900 text-xs uppercase font-semibold border-b border-gray-200">
-              <tr>
-                <th className="px-6 py-4">ID & Tanggal</th>
-                <th className="px-6 py-4">Pelanggan</th>
-                <th className="px-6 py-4">Paket</th>
-                <th className="px-6 py-4">Bukti Transfer</th>
-                <th className="px-6 py-4">Status</th>
-                <th className="px-6 py-4 text-right">Aksi Verifikasi</th>
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="bg-gray-50 text-gray-500 font-medium">
+                <th className="px-6 py-3 border-b border-gray-100">ID & Tanggal</th>
+                <th className="px-6 py-3 border-b border-gray-100">Pelanggan</th>
+                <th className="px-6 py-3 border-b border-gray-100">Paket & Nominal</th>
+                <th className="px-6 py-3 border-b border-gray-100 text-center">Bukti</th>
+                <th className="px-6 py-3 border-b border-gray-100 text-right">Aksi</th>
               </tr>
             </thead>
-            
-            <tbody className="divide-y divide-gray-200">
-              {isFetchingOrders ? (
-                <tr>
-                  <td colSpan="6" className="px-6 py-12 text-center">
-                    <Loader2 className="w-6 h-6 animate-spin text-blue-600 mx-auto" />
-                    <p className="text-gray-500 mt-2">Memuat data pesanan...</p>
-                  </td>
-                </tr>
-              ) : orders.length === 0 ? (
-                <tr>
-                  <td colSpan="6" className="px-6 py-12 text-center text-gray-500">
-                    Belum ada data pesanan yang masuk.
-                  </td>
-                </tr>
+            <tbody className="divide-y divide-gray-100">
+              {isFetching ? (
+                 <tr><td colSpan="5" className="px-6 py-12 text-center text-gray-400">Memuat data...</td></tr>
+              ) : filteredOrders.length === 0 ? (
+                 <tr><td colSpan="5" className="px-6 py-12 text-center text-gray-400">Tidak ada transaksi ditemukan</td></tr>
               ) : (
-                orders.map((order) => (
-                  <tr key={order.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="font-mono text-gray-900 font-medium">{order.id.split('-')[0]}</div>
-                      <div className="text-xs text-gray-500 mt-1">
-                        {new Date(order.created_at).toLocaleDateString("id-ID", { day: 'numeric', month: 'short', year: 'numeric' })}
-                      </div>
-                    </td>
-                    
+                filteredOrders.map(order => (
+                  <tr key={order.id} className="hover:bg-gray-50/50 transition-colors">
                     <td className="px-6 py-4">
-                      <div className="font-medium text-gray-900">
-                        {order.profiles?.full_name || "User Anonim"}
-                      </div>
+                      <div className="text-gray-900 font-medium">#{order.id.split('-')[0].toUpperCase()}</div>
+                      <div className="text-xs text-gray-400">{new Date(order.created_at).toLocaleDateString('id-ID')}</div>
                     </td>
-                    
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="uppercase font-bold text-xs text-blue-600 tracking-wider mb-1">
-                        {order.plan_type}
-                      </div>
-                      <div className="font-medium text-gray-900">
-                        Rp {order.amount.toLocaleString("id-ID")}
-                      </div>
-                    </td>
-                    
+                    <td className="px-6 py-4 font-medium">{order.profiles?.full_name || "Anonymous"}</td>
                     <td className="px-6 py-4">
-                      {order.payment_proof_url ? (
-                        <a 
-                          href={order.payment_proof_url} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 text-blue-600 hover:text-blue-800 font-medium transition-colors"
-                        >
-                          Lihat Bukti <ExternalLink className="w-4 h-4" />
-                        </a>
-                      ) : (
-                        <span className="text-gray-400 italic text-xs">Belum Upload</span>
-                      )}
+                       <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full mr-2 ${
+                         order.plan_type === 'premium' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'
+                       }`}>{order.plan_type}</span>
+                       Rp {order.amount.toLocaleString("id-ID")}
                     </td>
-                    
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      {renderStatusBadge(order.status)}
+                    <td className="px-6 py-4 text-center">
+                       {order.payment_proof_url ? (
+                         <a href={order.payment_proof_url} target="_blank" className="text-blue-500 hover:underline inline-flex items-center gap-1">
+                           <ExternalLink size={14} /> Lihat
+                         </a>
+                       ) : <span className="text-gray-300">N/A</span>}
                     </td>
-                    
-                    <td className="px-6 py-4 text-right whitespace-nowrap">
-                      {order.status === "pending" ? (
-                        <div className="flex items-center justify-end gap-2">
-                          <button
-                            onClick={() => handleUpdateStatus(order.id, "verified")}
-                            disabled={actionLoading === order.id}
-                            className="p-2 bg-green-50 text-green-600 border border-green-200 rounded-lg hover:bg-green-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                            title="Setujui Pembayaran"
-                          >
-                            {actionLoading === order.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                          </button>
-                          
-                          <button
-                            onClick={() => handleUpdateStatus(order.id, "rejected")}
-                            disabled={actionLoading === order.id}
-                            className="p-2 bg-red-50 text-red-600 border border-red-200 rounded-lg hover:bg-red-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                            title="Tolak Pembayaran"
-                          >
-                            <XCircle className="w-4 h-4" />
-                          </button>
-                        </div>
-                      ) : (
-                        <span className="text-xs text-gray-400 font-medium">Selesai Diproses</span>
-                      )}
+                    <td className="px-6 py-4 text-right">
+                       {order.status === 'pending' ? (
+                         <div className="flex items-center justify-end gap-2">
+                           <button onClick={() => handleUpdateStatus(order.id, 'verified')} className="px-3 py-1.5 bg-gray-900 text-white rounded-lg text-xs hover:bg-gray-800">Terima</button>
+                           <button onClick={() => handleUpdateStatus(order.id, 'rejected')} className="px-3 py-1.5 border border-gray-200 rounded-lg text-xs hover:bg-gray-50">Tolak</button>
+                         </div>
+                       ) : (
+                          <span className={`text-xs font-medium ${order.status === 'verified' ? 'text-green-600' : 'text-red-500'}`}>
+                             {order.status === 'verified' ? 'Diterima' : 'Ditolak'}
+                          </span>
+                       )}
                     </td>
                   </tr>
                 ))
@@ -209,6 +199,16 @@ export default function AdminDashboard() {
           </table>
         </div>
       </div>
+    </div>
+  );
+}
+
+function StatCard({ label, value, sub }) {
+  return (
+    <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+      <p className="text-xs text-gray-500 font-medium mb-1">{label}</p>
+      <h3 className="text-xl font-semibold text-gray-900">{value}</h3>
+      <p className="text-[11px] text-gray-400 mt-1">{sub}</p>
     </div>
   );
 }

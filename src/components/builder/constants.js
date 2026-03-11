@@ -31,4 +31,5 @@ export const CATEGORY_LABELS = {
   graduation: "Wisuda",
   engagement: "Tunangan",
   general: "Umum",
+  custom: "Khusus",
 };
